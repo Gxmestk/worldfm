@@ -119,6 +119,77 @@ real-time is structurally achievable, at the cost of inter-frame coherence.
   `worldfm_infer.py:395-396` if `set_cond2_candidates_from_arrays` didn't run at preload — the server
   does it in `preload()`, so this only bites if you skip preload.
 
+## 5. The 42-view grid (where cond2's references come from)
+
+cond2's 42 candidate views are a fixed yaw/pitch grid cut from the 360° panorama offline
+(`modules/pano_postprocess.py:189-201`, `_views_yaw_pitch`):
+
+- **8 yaws**: 0, ±π/4, ±π/2, ±3π/4, π (every 45°)
+- **5 pitches**: 0, ±π/6, ±π/4
+- **+ 2 poles**: (yaw 0, +π/2) and (yaw 0, −π/2) — straight up / straight down
+
+→ 8 × 5 + 2 = **42** (also `moge.num_views: 42` in `default.yaml`). Each is a small
+perspective view resampled from the panorama at that direction, saved as
+`conditions/0000.png … 0041.png` (504×504) with its `K`+`c2w` in `transforms_condition.json`.
+cond2 selects one of these 42 (§7) — which is why motion "snaps" between only 42 references.
+
+## 6. The point cloud is built OFFLINE, not online (the back-projection math)
+
+The PLY is **generated once, offline, and cached**; the online phase only *renders* (splats)
+it. There is no per-frame point-cloud build.
+
+**Offline build** (`compute_ply_arrays`, `modules/pano_postprocess.py:123-149`) —
+equirectangular back-projection: every panorama pixel at longitude θ, latitude φ, depth r
+becomes a 3D point (OpenCV world coords):
+
+```
+X = r · sin(φ) · cos(θ)
+Y = −r · cos(φ)
+Z = −r · sin(φ) · sin(θ)
+color = that panorama pixel's RGB
+```
+
+For `mario` (2048×4096 panorama) → **8.39 M points**. Picture draping the photo over a
+depth-shaped dome. (The depth is from MoGe — see [`repo-mods.md`](./repo-mods.md) for the
+memory caps that make it coarse.)
+
+**Online render** (`TorchPointCloudRenderer.render_torch`, `modules/point_renderer.py:194-208`)
+— for the current camera only: `w2c = inv(c2w)`, project points (`z = X[:,2]`, pinhole
+`u = fx·X/z + cx`, `v = fy·Y/z + cy`), z-buffer (nearest point per pixel wins), splat its
+color → cond1. **No new points are ever created at runtime.**
+
+## 7. cond2 nearest-view selection — the actual algorithm
+
+`select_best_condition_index` (`modules/depth_selector.py:169-319`) picks which of the 42
+views serves as cond2 for the current camera:
+
+```
+select_best_condition_index(depth_cur, K_cur, c2w_cur, cond_db):
+  # 1. Sample pixels from the CURRENT view's depth (coarse grid + denser center); keep valid (d>0).
+  samples = grid_sample(depth_cur)
+  if empty: return (idx=0, 0, 0)               # OFF-REGION FALLBACK -> view 0
+
+  # 2. Unproject those pixels to 3D WORLD points using THIS camera.
+  X_cam   = K_cur⁻¹ · [u,v,1]ᵀ · d
+  X_world = R_w2cᵀ · (X_cam − t_w2c)           # w2c = inv(c2w)
+
+  # 3. For EACH of the 42 cached views, project the world pts in and count "consistent" hits:
+  for v in 0..41:
+      (u',v',z') = P_view[v] · X_world          # project into view v
+      inside     = (u',v') in view v's image AND z' > 0
+      d_v        = cond_db.depth_views[v] at (round(v'), round(u'))
+      consistent = |d_v − z'| < max(eps_rel·z', eps_abs)   # depths agree
+      hits[v]    = count(inside AND d_v>0 AND consistent AND angle_ok)
+
+  # 4. Score = hits × distance-weight (prefer nearby cameras); return argmax.
+  score[v] = hits[v] · lerp(weight_near, weight_far, clamp(dist/scale))
+  return argmax_v score[v]
+```
+
+- `max_view_angle_deg=180` ⇒ the `angle_ok` gate is **off** by default.
+- The fallback `return (0,0,0)` is the off-region case: cond2 snaps to view 0 and cond1 is
+  sparse → graceful degradation, not a crash (`depth_selector.py:234-235`).
+
 ## Cross-links
 
 - [`live-loop.md`](./live-loop.md) — run/ops recipe for `live_server.py` + `live/viewer.html`.
