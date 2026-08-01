@@ -1,0 +1,207 @@
+# InSpatio-WorldFM methodology card — machine-readable form for the leader AI agent.
+# Schema/axes defined in 02-comparison-framework.md. Sources: paper/2603.11911v3.pdf
+# (single report, no intro/full split) + this repo's inference code (worldfm/, modules/).
+# Verified 2026-07-29. Numbers are the paper's; "code:" refs are to this repo.
+
+identity:
+  name: "InSpatio-WorldFM"
+  org: "InSpatio (open-source release)"
+  date: "2026-05-06 (arXiv v3; originally submitted 2026-03)"
+  arxiv: "2603.11911"        # single paper; no separate intro/full report
+  open_source: true          # inference code + distilled 1/2-step weights released; ALL training code withheld
+  license: "Apache-2.0 (library code only; HunyuanWorld-1.0 and MoGe submodules are separately licensed)"
+  note: "Single report (no intro/full split). Reproducibility depends on the cited open-source release; the internal panorama generative model and ALL training code (Stages I-III) are withheld."
+
+task: "Real-time novel-view synthesis (conditional NVS): given ONE reference image x_ref + target camera pose(s), generate geometrically consistent target-view frames, one frame at a time."
+
+paradigm: "Frame-based latent diffusion — independent per-frame generation (rejects video/window temporal recurrence); PixArt-Sigma DiT with self-attention-only tri-condition injection; distilled to a 2-step real-time generator via Distribution Matching Distillation. Positioned as the open-source counter to World Labs' closed RTFM and to video-based world models."
+
+architecture:
+  backbone: "PixArt-Sigma (Sigma) Diffusion Transformer (DiT); XL_2 config (depth 28, hidden 1152, patch_size 2, num_heads 16, in_channels 4, learn_sigma=True)"   # PixArtWorldFM_XL_2
+  params_b: null             # NOT stated; XL_2 = depth28/hidden1152/patch2/heads16. Do NOT fabricate a B-count.
+  paradigm: "frame-based latent diffusion, independent per-frame generation"   # no window/chunk recurrence
+  fps: 25                    # ~25 FPS @ 512x512 on an H-series GPU [§3 p.12]; 10 FPS on RTX 4090
+  resolutions: ["512x512"]   # baseline config 512x512 [§3 p.12]; demo/meta.json poses at 512x512, fx=fy=320
+  context_window: "none — each frame generated independently; no temporal window. Consistency recovered purely via conditioning (explicit 3D anchor + implicit reference)."
+  components:
+    - "DiT denoiser (PixArtWorldFMMS / PixArtWorldFM)"
+    - "AutoencoderKL VAE (vae_scale 0.13025)"
+    - "pure-PyTorch point-cloud splatting renderer (cond1, explicit 3D anchor)"
+    - "MoGe-2-vitl-normal depth (offline anchor build)"
+    - "HunyuanWorld-1.0 panorama (offline, OPEN-SOURCE SUBSTITUTE; internal panorama model withheld)"
+    - "DMD 1-/2-step sampler (distilled student)"
+    - "DPM-Solver++ multi-step teacher sampler (CFG)"
+    - "PRoPE + Plucker camera encoders (implemented; INACTIVE on shipped inference)"
+  code_home: "worldfm/diffusion/model/nets/PixArtWorldFMMS.py (core DiT), modules/worldfm_infer.py (inference service)"
+
+inputs:
+  visual: "1 reference image x_ref with pose pi_ref (cond2 / implicit memory)"
+  camera: "target pose pi_tgt=(K,E); offline-built global point cloud rendered to target view as x_hat_tgt (cond1 / explicit 3D anchor)"
+  text: "NONE at inference — caption cross-attention disabled (disable_cross_attn=True), caption embeddings zeroed, despite PixArt-Sigma text-to-image lineage"
+  caveat: "Camera-pose modulation (PRoPE/Plucker) is NOT passed on the shipped inference path; the released 1/2-step checkpoints run with plain self-attention and no explicit camera-pose modulation."
+
+outputs: "Target-view RGB image(s) x_tgt at 512x512, one frame independently per target pose; written as per-frame PNG (--save_mode image) or stitched MP4 (default 30 fps). No separate super-resolution/refinement stage."
+
+key_mechanisms:
+  - "Independent per-frame generation (no window dependency)"
+  - "Self-attention-only tri-condition width-concat [z_t | cond1 | cond2]"
+  - "Explicit 3D anchor via point-cloud rendering (cond1)"
+  - "Implicit reference-frame memory selected as nearest condition view (cond2)"
+  - "Hybrid spatial memory (explicit coarse geometry + implicit fine appearance)"
+  - "PRoPE camera-pose encoding (adopted; INACTIVE at inference) vs Plucker / pure-parametric (compared)"
+  - "DMD 2-step distillation with t_mid=200 (preferred schedule)"
+  - "Offline/online two-phase runtime (panorama+MoGe anchors offline; frame model online)"
+  - "Progressive training: noise-schedule biasing, progressive condition injection, random anchor masking, UE synthetic finetune (ALL paper-only)"
+
+challenge_1_interaction:     # paper §2.4.1 Camera Pose Encoding p.5-6
+  camera_pose_encoding: "PRoPE (Cameras-as-RPE): P_i^T applied to queries and P_i^{-1} to keys/values + 2D RoPE for intra-image structure — chosen over Plucker-ray (additive 6-D o x d / d) and pure-parametric (MLP on R/T) for fastest convergence / most stable control. WARNING: implemented in source but NOT activated on shipped inference (worldfm_infer.py never passes use_prope/prope_viewmats/prope_Ks)."
+  navigation: "User supplies target pose(s) pi_tgt (demo/meta.json: ~30 c2w poses, fx=fy=320, 512x512). No text/action prompt path at inference."
+  lineage: [PRoPE_Cameras_as_RPE, Plucker_ray_Cosmos, pure_parametric]
+
+challenge_2_consistency:    # paper §2.4.1 Hybrid Spatial Memory p.6; Fig.3 p.5
+  explicit_anchor: "Per-target point-cloud rendering x_hat_tgt (cond1) = global 3D cloud projected/splatted to target camera — coarse global geometry prior."
+  implicit_memory: "Reference frame (cond2) selected as nearest condition view (depth-consistency + view-angle + distance weight), injected via self-attention — fine appearance + plausible hallucination in unobserved regions."
+  design: "Hybrid: explicit anchor holds coarse geometry, implicit memory preserves fine appearance. Width-concatenated tri-condition [z_t | cond1 | cond2]; only target portion of output retained. Self-attention chosen over cross-attention (empirically higher quality)."
+  lineage: [RTFM_World_Labs, StarGen, VGGT, DUSt3R, MoGe, MapAnything, MegaDepth]
+
+challenge_3_stability:      # paper §2.4.1 Training Strategy p.6-7 + §2.4.2 p.7 + §4.1 p.13
+  approach: "Frame-based generation removes inter-frame temporal constraints; consistency is recovered via CONDITIONING, not temporal recurrence. Training-side regularization stabilizes what temporal recurrence would otherwise enforce."
+  training_regularization: "Noise-schedule biasing toward high-noise t; progressive condition injection (implicit memory first, explicit anchor later); random anchor masking — all PAPER-ONLY (no train.py released)."
+  synthetic_finetune: "Unreal Engine trajectories with precise GT pose/depth correct feedforward-reconstruction errors in point-cloud anchors (limited steps). PAPER-ONLY."
+  known_issue: "Frame jitter during interaction; limited motion boundary; weak dynamic-content generation [§4.1 p.13]."
+  lineage: [PixArt_Sigma, Latent_Diffusion_LDM]
+
+challenge_4_runtime:        # paper §2.5 p.7 + §3 p.12
+  distillation: "Distribution Matching Distillation -> 2-step denoising with t_mid=200 (1000-step schedule): step 1 T->200 establishes coarse structure, step 2 200->0 refines; 2-step > 1-step (second step is a dedicated refinement pass)."
+  visual_latency: "~25 FPS @ 512x512 on an H-series GPU; 10 FPS on RTX 4090."   # 'H-series' SKU not pinned (e.g. H100)
+  semantic_latency: "Per-frame (no chunk/window wait); interaction-friendly by construction."
+  engineering: "torch.compile (reduce-overhead) on denoiser+VAE; condition-cond2 + VAE latent caching; KV-cache management."
+  chunk_granularity: "1 frame (the minimal frame-based unit)."
+  lineage: [Distribution_Matching_Distillation_DMD, Variational_Score_Distillation_VSD]
+
+framing_axes_compact:
+  - {axis: "Generation paradigm", choice: "Frame-based, independent per-frame (rejects video/window)"}
+  - {axis: "Real-time / interactive latency", choice: "True real-time, consumer-GPU deployable"}
+  - {axis: "Spatial consistency", choice: "Hybrid memory = explicit 3D anchor + implicit reference self-attention"}
+  - {axis: "Training-stage evolution", choice: "Progressive 3-stage (image prior -> frame model -> real-time generator)"}
+  - {axis: "Offline vs online", choice: "Two-phase (offline anchors+reference; online real-time frame model)"}
+  - {axis: "NVS", choice: "Conditional NVS from a single reference under camera motion"}
+
+training:
+  release_status: "INFERENCE-ONLY RELEASE. No train.py, dataset/dataloader, optimizer, or training entrypoint shipped. The entire 3-stage pipeline is paper-only; only inference of the already-distilled 1/2-step model is functional."
+  stages:
+    - stage: 1
+      name: "Pre-Training (PixArt-Sigma foundation)"
+      detail: "PixArt-Sigma DiT backbone SELECTION (no new pretraining stated); establishes a high-fidelity, compute-efficient image-generation prior. Whether any continued pretraining/finetuning occurred is unspecified."
+      status: "paper-only"
+    - stage: 2
+      name: "Middle-Training (controllable frame model + hybrid spatial memory + UE finetune)"
+      phases:
+        2a: "Fundamental Frame Model on REAL data — add tri-condition concat, PRoPE camera control, hybrid spatial memory; epsilon-prediction L2 loss L=E[||eps - eps_theta(z_t,t,C)||^2]; training strategies = noise-schedule biasing + progressive condition injection + random anchor masking. 16 frames/clip -> 4 reference (global point cloud) + 12 targets; MapAnything pose/depth."
+        2b: "Synthetic UE finetune — precise GT pose/depth trajectories, collision avoidance, stochastic/template motion; limited steps so natural-appearance priors are preserved."
+      status: "paper-only"
+    - stage: 3
+      name: "Post-Training (DMD distillation)"
+      detail: "DMD distillation: frozen real score + dynamically-updated fake score; minimize approximate KL (difference of denoising predictions) + regression loss on pre-computed noise-image pairs. Final schedule 2-step, t_mid=200."
+      status: "paper-only (only the distilled 1/2-step INFERENCE is released)"
+
+data:
+  total_clips: null         # NOT stated
+  sources: null             # NOT stated
+  real: ["internet videos", "DL3DV", "RealEstate10K", "authors' own captured videos"]
+  synthetic: ["Unreal Engine (precise GT camera pose + depth)"]
+  pose_recovery: "MapAnything feedforward reconstruction (per-frame pose + depth); 4 frames form the global point cloud, 12 are training targets; each target's reference = temporally closest of the 4."
+  curation: "Per real clip randomly sample 16 frames -> 4 reference (build global point cloud) + 12 training targets; point-cloud render = global cloud projected to target camera; random shuffling/masking simulates real-world disorder/discontinuity. Synthetic pipeline mirrors the 4-ref/12-target split with stochastic/template trajectories + collision avoidance. Offline anchor/reference providers referenced: Stable Virtual Camera, Cat3D, VGGT, DUSt3R, MoGe, MegaDepth; panorama providers HunyuanWorld/HY-World, Diffusion360, Text2360. Dataset SIZE, total frame count, and training compute are NOT stated."
+  caption: "None — the model is pose/image-conditioned only; there is no text-caption path at inference (cross-attention disabled, embeddings zeroed)."
+
+results_qualitative:        # QUALITATIVE ONLY — no FID/PSNR/LPIPS/multi-view-consistency metrics or benchmark tables [§3 p.12-13]
+  best_at: []               # no quantitative metrics reported
+  not_best_at: []
+  headline: "~25 FPS @ 512x512 on H-series GPU; 10 FPS on RTX 4090. DMD 2-step outperforms 1-step; t_mid=200 (1000-step schedule) yields best balance. Each evaluation example = 1 reference + 10 frames from different viewpoints (Figs.4-8)."
+  baselines: ["RTFM (closed real-time frame model, posed-frame memory)", "StarGen (keyframe feature-warping memory)", "own Stage-II teacher vs Stage-III distilled variant"]
+  internal_ablation: "Camera-pose encodings compared: Plucker-ray vs PRoPE vs pure-parametric -> PRoPE chosen (fastest convergence, most stable control)."
+
+lineage:
+  - "PixArt-Sigma (base DiT backbone)"
+  - "DiT"
+  - "Latent Diffusion / Stable Diffusion (LDM)"
+  - "Distribution Matching Distillation (DMD)"
+  - "Variational Score Distillation (VSD)"
+  - "PRoPE / Cameras-as-RPE"
+  - "Plucker-ray camera embedding (e.g. Cosmos)"
+  - "RTFM (World Labs, closed)"
+  - "StarGen"
+  - "VGGT / DUSt3R / MoGe / MapAnything / MegaDepth (feedforward 3D reconstruction)"
+  - "Stable Virtual Camera / Cat3D (multi-view diffusion)"
+  - "HunyuanWorld-1.0 (open-source panorama substitute)"
+
+limitations:
+  - "Dynamic content: both the frame model and the multi-view-consistency training data contain limited dynamic content, so generating dynamic scenes with high quality/stability is hard [§4.1 p.13]."
+  - "Limited motion boundary: the historical memory relies on multi-view/panoramic observations whose generation models are high-compute/memory and offline-only, introducing a motion boundary during online inference [§4.1 p.13]."
+  - "Interactive visual stability: removing inter-frame temporal constraints limits visual stability; noticeable frame jitter occurs during interaction [§4.1 p.13]."
+  - "Evaluation is qualitative only — no FID/PSNR/LPIPS/multi-view-consistency metrics or quantitative baselines, so 'strong multi-view consistency' and 'minimal perceptual difference' after distillation are not numerically substantiated [§3 p.12-13]."
+  - "RELEASE CAVEAT: inference-only. All training (Stages I-III), data curation, and training strategies are paper-only; the internal panorama generative model is withheld (HunyuanWorld-1.0 is the substitute)."
+
+distinguishing_idea: "Generate each frame INDEPENDENTLY (no window-level temporal dependency) yet preserve global 3D consistency by conditioning every frame on BOTH an explicit point-cloud anchor and an implicit reference-frame memory reached only via self-attention — then recover real-time speed by distilling to a 2-step (t_mid=200) generator, as the open-source counter to video-based world models and to World Labs' closed RTFM."
+
+code_pointers:              # all verified against this checkout; line numbers current as of 2026-07-29
+  tri_condition_concat: "worldfm/diffusion/model/nets/PixArtWorldFMMS.py:449"
+  tri_condition_concat_mask_variants: "worldfm/diffusion/model/nets/PixArtWorldFMMS.py:438,445"
+  split_output_target_retention: "worldfm/diffusion/model/nets/PixArtWorldFMMS.py:707-713"
+  cond2_cross_attn_branch: "worldfm/diffusion/model/nets/PixArtWorldFMMS.py:382-428"
+  disable_cross_attn_default: "modules/worldfm_infer.py:97"
+  cond2_cross_attn_disabled: "modules/worldfm_infer.py:452,554"
+  point_cloud_render: "modules/point_renderer.py:89-191"
+  compute_ply_arrays: "modules/pano_postprocess.py:123-149"
+  select_best_condition_index: "modules/depth_selector.py:169-319"
+  build_condition_db_in_memory: "modules/depth_selector.py:128"
+  cond2_indexing_and_cache: "modules/worldfm_infer.py:410-438"
+  set_cond2_candidates: "modules/worldfm_infer.py:357"
+  moge_infer_merge: "run_pipeline.py:354-379"
+  moge_cameras_constants: "modules/moge_pano.py:21-22,57-66"
+  panogen_hunyuanworld: "modules/panogen.py:71-199"
+  dmd_1step: "modules/worldfm_infer.py:455-463"
+  dmd_2step: "modules/worldfm_infer.py:464-484"
+  mid_t_200: "modules/worldfm_infer.py:99"
+  ts_999_and_mid_coeffs: "modules/worldfm_infer.py:217-222"
+  multistep_dpm_teacher: "modules/worldfm_infer.py:497-567"
+  dpm_solver_factory: "worldfm/diffusion/dpm_solver.py:6-36"
+  vae_encode_decode: "modules/worldfm_infer.py:178-271"
+  vae_scale: "modules/worldfm_infer.py:214"
+  caption_embs_zeroed: "modules/worldfm_infer.py:233,534"
+  prope_impl: "worldfm/diffusion/model/nets/prope.py:52-140"
+  prope_apply_blocks: "worldfm/diffusion/model/nets/PixArtWorldFM_blocks.py:158-231"
+  prope_precompute: "worldfm/diffusion/model/nets/PixArtWorldFMMS.py:521-634"
+  prope_gated_default_off: "worldfm/diffusion/model/nets/PixArtWorldFMMS.py:85-89,480-489"
+  plucker_impl: "worldfm/diffusion/model/nets/plucker.py:8-72"
+  plucker_injection: "worldfm/diffusion/model/nets/PixArtWorldFMMS.py:639-666"
+  plucker_use_default_off: "worldfm/diffusion/model/nets/PixArtWorldFMMS.py:480"
+  plucker_proj_mlp: "worldfm/diffusion/model/nets/PixArtWorldFMMS.py:246-250"
+  torch_compile: "modules/worldfm_infer.py:164-211"
+  cond2_latent_cache: "modules/worldfm_infer.py:356-381"
+  kv_compress_backbone: "worldfm/diffusion/model/nets/PixArtWorldFM_blocks.py:86-194"
+  kv_compress_layer_empty_default: "worldfm/diffusion/model/nets/PixArtWorldFMMS.py:231"
+  xl2_config: "worldfm/diffusion/model/nets/PixArtWorldFM.py:482-483"
+  iddpm_factory_1000step: "worldfm/diffusion/iddpm.py:11,18"
+  gaussian_diffusion_training_losses_unwired: "worldfm/diffusion/model/gaussian_diffusion.py:744,857"
+  checkpoint_download: "worldfm/download.py:23,34"
+  config_default: "default.yaml"
+  config_default_step2: "default.yaml:50"
+  config_default_cfg_4_5: "default.yaml:55"
+  entrypoint: "run_pipeline.py"
+
+flags_to_verify:
+  - "PRoPE (paper's ADOPTED camera encoding) is implemented in source (prope.py:52-140) but NOT activated on shipped inference (worldfm_infer.py never passes use_prope/prope_viewmats/prope_Ks); unclear if released weights were trained with PRoPE and the modulation is merely bypassed, or camera conditioning is effectively absent in the public model."
+  - "Plucker (compared alternative) implemented (plucker.py:8-72) but NOT activated at inference (use_plucker never set)."
+  - "Pure-parametric camera injection (3rd strategy) has NO code anywhere in the repo."
+  - "cond2 cross-attention alternative branch implemented (PixArtWorldFMMS.py:382-428) but DISABLED (use_cond2_cross_attn=False at worldfm_infer.py:452). Dead branch exists."
+  - "Text/caption conditioning fully disabled at inference (disable_cross_attn=True :97; caption_embs zeroed :233,:534) despite PixArt-Sigma T2I lineage."
+  - "Internal panorama generative model WITHHELD (README:52-53); shipped path uses HunyuanWorld-1.0 as open-source substitute — may not reproduce paper's 'consistent scene generation'."
+  - "All 3 training stages, data curation, and training strategies are paper-only (no train.py/dataset/optimizer); gaussian_diffusion.py:744,857 has inherited training_losses boilerplate but it is NOT wired to any released loop."
+  - "cfg_scale: default.yaml sets worldfm.cfg_scale=4.5 (:55) but WorldFMInprocessConfig uses cfg_scale=0.0 for the shipped 1/2-step DMD path (:100); 4.5 applies ONLY to the multi-step DPM teacher (:502). Shipped default step=2 therefore runs at cfg_scale=0.0, not 4.5."
+  - "Dataset size, #clips, total frames, model params, training compute, #GPUs, step counts all unstated."
+  - "'H-series GPU' not specified to a SKU (e.g. H100); treat ~25 FPS as approximate/hardware-unspecified."
+  - "No quantitative metrics (FID/PSNR/LPIPS/consistency) — qualitative only (Figs.4-8); 'minimal perceptual difference' after distillation not numerically substantiated."
+  - "MoGe submodule must be checked out at pinned commit (setup.sh); submodules are empty in this checkout — must be initialized before the pipeline runs."
+  - "Stage I is described as backbone SELECTION — whether any continued pretraining/finetuning of PixArt-Sigma occurred is unspecified."
+  - "depth_selector.py nearest-view defaults are dist_min_m=1.0 / dist_max_m=5.0 (:184-185) — verify whether call sites override dist_max to a larger motion boundary (paper asserts a limited motion boundary, §4.1 p.13)."

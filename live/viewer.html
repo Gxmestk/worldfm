@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WorldFM Live Loop</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #0b0d10; color: #e6e6e6;
+    font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  #wrap { display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 100%; gap: 10px; }
+  #stage { position: relative; box-shadow: 0 0 0 1px #2a2f36, 0 10px 40px rgba(0,0,0,.6); }
+  canvas { display: block; background: #000; image-rendering: pixelated; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  #hud { position: absolute; left: 8px; top: 8px; background: rgba(0,0,0,.55);
+    padding: 6px 9px; border-radius: 6px; font-size: 12px; pointer-events: none;
+    white-space: pre; backdrop-filter: blur(3px); }
+  #cheat { position: absolute; right: 8px; top: 8px; background: rgba(0,0,0,.55);
+    padding: 8px 11px; border-radius: 6px; font-size: 12px; line-height: 1.6;
+    backdrop-filter: blur(3px); }
+  #cheat table { border-collapse: collapse; }
+  #cheat td { vertical-align: top; padding: 0; }
+  #cheat td.k { color: #ffd479; font-weight: 600; padding-right: 12px; white-space: nowrap; }
+  #cheat.hide { display: none; }
+  #bar { font-size: 12px; color: #9aa3ad; text-align: center; max-width: 600px; }
+  #bar b { color: #e6e6e6; }
+  a { color: #6cb6ff; }
+  #warn { color: #ffb454; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="cv" width="512" height="512"></canvas>
+    <div id="hud">connecting…</div>
+    <div id="cheat">
+      <table>
+        <tr><td class="k">W A S D</td><td>move</td></tr>
+        <tr><td class="k">Q / E</td><td>down / up</td></tr>
+        <tr><td class="k">drag</td><td>look around</td></tr>
+        <tr><td class="k">← → ↑ ↓</td><td>look</td></tr>
+        <tr><td class="k">scroll / + −</td><td>move speed</td></tr>
+        <tr><td class="k">R</td><td>reset</td></tr>
+        <tr><td class="k">P</td><td>save frame (PNG)</td></tr>
+        <tr><td class="k">H</td><td>hide / show this</td></tr>
+      </table>
+    </div>
+  </div>
+  <div id="bar">
+    <b>WASD</b> move · <b>QE</b> up/down · <b>drag</b>/<b>arrows</b> look · <b>scroll</b> speed · <b>R</b> reset · <b>P</b> save · <b>H</b> help · step-1 ≈ 3.7 FPS ·
+    <a id="frameLink" href="/frame" target="_blank">/frame</a> ·
+    <a href="/metrics" target="_blank">/metrics</a>
+    <div id="warn"></div>
+  </div>
+</div>
+<script>
+"use strict";
+// ---- tiny vec3 ----
+const V = {
+  sub:(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],
+  add:(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]],
+  scale:(a,s)=>[a[0]*s,a[1]*s,a[2]*s],
+  dot:(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],
+  cross:(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]],
+  norm:a=>{const l=Math.hypot(a[0],a[1],a[2])||1;return [a[0]/l,a[1]/l,a[2]/l];},
+};
+
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+const hud = document.getElementById("hud");
+const warnEl = document.getElementById("warn");
+
+let K = null, image_size = 512;
+// first-person fly state (OpenCV world: c2w0 columns = right/down/forward; translation = eye)
+let eye0=null, forward0=null, worldUp=null;     // home / reference basis
+let eye=null, forward=null;                      // current camera state
+let speed = 1.0;                                 // move speed (world units / sec)
+const keys = new Set();                          // held movement keys (wasd/qe)
+
+// OpenCV look-at -> 4x4 c2w (verified analytically against c2w0; see live-loop.md)
+//   f = normalize(target - eye); r = normalize(cross(f, worldUp)); d = cross(f, r)
+//   columns [r | d | f | eye]; {r,d,f} right-handed (r x d = f).
+function lookAtC2W(eye, target, worldUp) {
+  const f = V.norm(V.sub(target, eye));
+  const r = V.norm(V.cross(f, worldUp));
+  const d = V.cross(f, r);
+  return [
+    [r[0], d[0], f[0], eye[0]],
+    [r[1], d[1], f[1], eye[1]],
+    [r[2], d[2], f[2], eye[2]],
+    [0,    0,    0,    1     ],
+  ];
+}
+// Rodrigues rotation of v around unit axis k by ang (rad)
+function rotate(v, k, ang) {
+  const c=Math.cos(ang), s=Math.sin(ang);
+  return V.add(V.add(V.scale(v,c), V.scale(V.cross(k,v),s)), V.scale(k, V.dot(k,v)*(1-c)));
+}
+function lookYaw(right){ forward = V.norm(rotate(forward, worldUp, -right)); }  // +right => look right
+function lookPitch(up){                                                          // +up => look up
+  const r = V.norm(V.cross(forward, worldUp));
+  const nf = rotate(forward, r, up);
+  if (Math.abs(V.dot(V.norm(nf), worldUp)) < 0.98) forward = V.norm(nf);        // clamp near vertical
+}
+function currentC2W() { return lookAtC2W(eye, V.add(eye, forward), worldUp); }
+
+function resetView(){
+  eye = eye0 ? eye0.slice() : [0,0,0];
+  forward = forward0 ? forward0.slice() : [0,0,1];
+  markDirty();
+}
+
+function decomposeScene(scene) {
+  K = scene.K; image_size = scene.image_size || 512;
+  cv.width = cv.height = image_size;
+  const c = scene.c2w0;
+  eye0 = [c[0][3], c[1][3], c[2][3]];
+  const down0 = [c[0][1], c[1][1], c[2][1]];
+  forward0 = V.norm([c[0][2], c[1][2], c[2][2]]);
+  worldUp = V.norm(V.scale(down0, -1));        // world up = -camera-down
+  resetView();
+  // self-check: home pose should reconstruct c2w0
+  const rec = currentC2W();
+  let drift = 0;
+  for (let i=0;i<3;i++) for (let j=0;j<4;j++) drift=Math.max(drift, Math.abs(rec[i][j]-c[i][j]));
+  warnEl.textContent = drift > 1e-3
+    ? `⚠ home-pose self-check drift=${drift.toExponential(2)} (look-at math vs c2w0 mismatch)`
+    : "";
+}
+
+// ---- networking ----
+let ws=null, connected=false, lastStats={};
+function connect() {
+  const url = (location.protocol==="https:"?"wss":"ws")+"://"+location.host+"/stream";
+  ws = new WebSocket(url);
+  ws.binaryType = "arraybuffer";
+  ws.onopen = ()=>{ connected=true; hud.textContent="streaming"; };
+  ws.onmessage = (ev)=>{
+    if (typeof ev.data === "string") {
+      try { const m=JSON.parse(ev.data);
+        if (m.type==="hello") { decomposeScene(m.scene); sendPoseNow(); }
+        else if (m.type==="stats") { lastStats=m; }
+        else if (m.type==="error") { warnEl.textContent="⚠ "+m.msg; }
+      } catch(e){}
+      return;
+    }
+    const img = new Image();
+    img.onload = ()=>{ ctx.drawImage(img,0,0,cv.width,cv.height); paintHud(); };
+    img.src = URL.createObjectURL(new Blob([ev.data], {type:"image/jpeg"}));
+  };
+  ws.onclose = ()=>{ connected=false; hud.textContent="reconnecting…"; setTimeout(connect, 1000); };
+  ws.onerror = ()=>{ try{ws.close();}catch(e){}; };
+}
+function sendPoseNow() {
+  if (!ws || ws.readyState!==1 || !K) return;
+  ws.send(JSON.stringify({c2w: currentC2W(), K: K}));
+}
+
+let poseDirty=false;
+function markDirty(){ poseDirty=true; }
+function applyMovement(step){
+  const f = forward, r = V.norm(V.cross(f, worldUp));
+  let moved=false;
+  if (keys.has("w")) { eye=V.add(eye, V.scale(f,  step)); moved=true; }
+  if (keys.has("s")) { eye=V.add(eye, V.scale(f, -step)); moved=true; }
+  if (keys.has("d")) { eye=V.add(eye, V.scale(r,  step)); moved=true; }
+  if (keys.has("a")) { eye=V.add(eye, V.scale(r, -step)); moved=true; }
+  if (keys.has("e")) { eye=V.add(eye, V.scale(worldUp,  step)); moved=true; }
+  if (keys.has("q")) { eye=V.add(eye, V.scale(worldUp, -step)); moved=true; }
+  return moved;
+}
+// main loop (~30Hz): continuous WASD movement + throttled pose send
+setInterval(()=>{
+  if (applyMovement(speed * 0.033)) poseDirty=true;
+  if (poseDirty) { poseDirty=false; sendPoseNow(); paintHud(); }
+}, 33);
+
+function paintHud() {
+  const s = lastStats;
+  const fps = s.fps!=null ? s.fps.toFixed(1) : "—";
+  const ms  = s.ms!=null  ? s.ms.toFixed(0)  : "—";
+  const idx = s.idx!=null ? s.idx : "—";
+  hud.textContent =
+    `fps ${fps}  render ${ms}ms  cond_idx ${idx}\n` +
+    `pos [${eye[0].toFixed(2)} ${eye[1].toFixed(2)} ${eye[2].toFixed(2)}]  spd ${speed.toFixed(2)}`;
+}
+
+// ---- input ----
+let dragging=false, lastX=0, lastY=0;
+cv.addEventListener("pointerdown", e=>{ dragging=true; lastX=e.clientX; lastY=e.clientY;
+  cv.setPointerCapture(e.pointerId); });
+cv.addEventListener("pointerup",   e=>{ dragging=false; });
+cv.addEventListener("pointermove", e=>{
+  if(!dragging) return;
+  const dx=e.clientX-lastX, dy=e.clientY-lastY;
+  lastX=e.clientX; lastY=e.clientY;
+  lookYaw(dx*0.004);        // drag right => look right
+  lookPitch(-dy*0.004);     // drag up => look up
+  markDirty();
+});
+cv.addEventListener("wheel", e=>{
+  e.preventDefault();
+  speed *= (e.deltaY>0 ? 1.15 : 0.87);
+  speed = Math.max(0.05, Math.min(5.0, speed));
+  paintHud();
+}, {passive:false});
+
+const cheatEl = document.getElementById("cheat");
+function toggleCheat(){ cheatEl.classList.toggle("hide"); }
+function saveFrame(){
+  const a=document.createElement("a");
+  a.download="worldfm_frame.png";
+  a.href=cv.toDataURL("image/png");
+  document.body.appendChild(a); a.click(); a.remove();
+}
+window.addEventListener("keydown", e=>{
+  switch (e.key) {
+    case "r": case "R": resetView(); break;
+    case "h": case "H": case "?": toggleCheat(); break;
+    case "p": case "P": e.preventDefault(); saveFrame(); break;
+    case "ArrowLeft":  e.preventDefault(); lookYaw(-0.05); markDirty(); break;
+    case "ArrowRight": e.preventDefault(); lookYaw(0.05);  markDirty(); break;
+    case "ArrowUp":    e.preventDefault(); lookPitch(0.05);  markDirty(); break;
+    case "ArrowDown":  e.preventDefault(); lookPitch(-0.05); markDirty(); break;
+    case "+": case "=": e.preventDefault(); speed=Math.min(5.0, speed*1.15); paintHud(); break;
+    case "-": case "_": e.preventDefault(); speed=Math.max(0.05, speed*0.87); paintHud(); break;
+    default:
+      if ("wasdqe".includes(e.key.toLowerCase())) keys.add(e.key.toLowerCase());
+  }
+});
+window.addEventListener("keyup", e=>{ keys.delete(e.key.toLowerCase()); });
+window.addEventListener("blur", ()=>{ keys.clear(); });   // stop moving if the page loses focus
+
+// fetch scene up-front so controls work even before the first WS hello lands
+fetch("/scene").then(r=>r.json()).then(s=>{ if(!K){ decomposeScene(s); } }).catch(()=>{});
+connect();
+</script>
+</body>
+</html>

@@ -8,3 +8,10 @@ plans/
 weights/
 weights
 upload_ckpts.py
+
+# local run/dev artifacts (regenerable — rebuilt each run, keep out of git)
+logs/
+.venv/
+
+# Claude Code local/personal settings (machine-specific; keep shared .claude/ settings committable)
+.claude/settings.local.json
