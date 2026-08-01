@@ -1,8 +1,8 @@
 # Code & config modifications made to run on 16 GB
 
-> **Atomic scope:** This doc is *only* the change record for the uncommitted working-tree edits made to get the WorldFM pipeline running in a 16 GB cgroup. It is not a guide and not a general technique reference.
+> **Atomic scope:** This doc is *only* the change record for the edits made to get the WorldFM pipeline running in a 16 GB cgroup (committed on the `feat/live-loop` branch). It is not a guide and not a general technique reference.
 >
-> **Status:** These are **uncommitted working-tree changes**. Review with `git diff` (and `git status`) before committing. Nothing below is on `main`.
+> **Status:** **Committed on the `feat/live-loop` branch** (see `git log feat/live-loop -- modules/panogen.py default.yaml run_pipeline.py`); **not yet on `main`**. Recorded here for posterity.
 >
 > **Cross-links:**
 > - [`oom-guardrailing.md`](../../docs/oom-guardrailing.md) — the general OOM/OOM-guardrailing techniques these changes instantiate.
@@ -25,10 +25,9 @@
 ## Reviewing these changes
 
 ```bash
-git status            # uncommitted working-tree files
-git diff modules/panogen.py
-git diff default.yaml
-git diff run_pipeline.py
+git log feat/live-loop --oneline -- modules/panogen.py default.yaml run_pipeline.py
+git show feat/live-loop -- modules/panogen.py     # the full 16 GB diff
+git diff main...feat/live-loop -- default.yaml run_pipeline.py
 ```
 
 For the general techniques behind each edit (NF4 swap-in vs. bf16 load, why CPU offload is hostile to tight cgroups, attention-budget math for out-of-range `resolution_level`, bnb free-on-`del`), see [`oom-guardrailing.md`](../../docs/oom-guardrailing.md). For how to run the pipeline with these edits applied, see [`run-guide.md`](./run-guide.md).

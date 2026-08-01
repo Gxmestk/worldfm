@@ -312,6 +312,13 @@ def step1_panogen(image_path: str, output_dir: Path, *, cfg=None, save_intermedi
     if save_intermediates:
         pano_img.save(str(pano_disk))
         _log("Step1", f"Panorama saved: {pano_disk}")
+    # Release the heavy FLUX pipeline now so the next stage (MoGe) has RAM/VRAM
+    # headroom on this 16GB box. Without this, FLUX can stay resident and OOM.
+    import gc
+    del demo
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     return pano_img
 
 
@@ -739,6 +746,7 @@ def main() -> int:
             image_path=str(image_path),
             output_dir=output_dir,
             cfg=cfg,
+            save_intermediates=bool(args.save_intermediates or args.prepare_only),
         )
 
         # ---- Step 2: Panorama -> depth/PLY/conditions (in memory) ----

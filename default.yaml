@@ -22,12 +22,12 @@ panogen:
 # ─── Step 2: MoGe depth estimation ───────────────────────────────────────────
 moge:
   pretrained: Ruicheng/moge-2-vitl-normal
-  resolution_level: 30
+  resolution_level: 9  # MoGe valid range is 0-9 (default 9); 30 was out-of-range -> ~3.3x max_tokens -> OOM
   fov_deg: 45.0
   num_views: 42
-  merge_max_width: 4096
-  merge_max_height: 2048
-  batch_size: 4
+  merge_max_width: 1024  # was 4096; merge at native pano res to avoid the ~11GB 4k merge spike (16GB cgroup)
+  merge_max_height: 512  # was 2048
+  batch_size: 1  # was 4; reduced to fit 16GB VRAM at the 4k MoGe tier
 
 # ─── Step 3: Condition rendering & view selection ────────────────────────────
 render:

@@ -78,7 +78,7 @@ class Image2PanoramaDemo:
             )
 
         self.args = args
-        self.height, self.width = 960, 1920
+        self.height, self.width = 512, 1024  # was 960x1920; reduced to fit 16GB RAM/VRAM at gen time
 
         self.THETA = 0
         self.PHI = 0
@@ -90,10 +90,23 @@ class Image2PanoramaDemo:
         self.blend_extend = 6
 
         self.lora_path = "tencent/HunyuanWorld-1"
-        self.model_path = "black-forest-labs/FLUX.1-Fill-dev"
+        self.base_path = "black-forest-labs/FLUX.1-Fill-dev"
+        self.nf4_path = "diffusers/FLUX.1-Fill-dev-nf4"  # NF4 transformer+T5 (~9GB) — 16GB RAM/VRAM safe
+        self.model_path = self.base_path  # back-compat alias
 
+        # Load NF4-quantized transformer + T5 separately, then assemble the pipeline
+        # from the base repo, so the bf16 weights of those two heavy components are
+        # never materialized (keeps load-time RAM ~9GB instead of ~34GB).
+        from diffusers import FluxTransformer2DModel
+        from transformers import T5EncoderModel
+        transformer = FluxTransformer2DModel.from_pretrained(
+            self.nf4_path, subfolder="transformer", torch_dtype=torch.bfloat16)
+        text_encoder_2 = T5EncoderModel.from_pretrained(
+            self.nf4_path, subfolder="text_encoder_2", torch_dtype=torch.bfloat16)
         self.pipe = Image2PanoramaPipelines.from_pretrained(
-            self.model_path,
+            self.base_path,
+            transformer=transformer,
+            text_encoder_2=text_encoder_2,
             torch_dtype=torch.bfloat16,
         )
         self.pipe.load_lora_weights(
@@ -102,9 +115,11 @@ class Image2PanoramaDemo:
             weight_name="lora.safetensors",
             torch_dtype=torch.bfloat16,
         )
-        self.pipe.fuse_lora()
-        self.pipe.unload_lora_weights()
-        self.pipe.enable_model_cpu_offload()
+        # LoRA kept as a non-fused adapter: bitsandbytes nf4 does not support fuse_lora() cleanly.
+        # nf4 (~9GB) fits entirely on the 16GB GPU, so place the pipeline on cuda directly.
+        # Do NOT use enable_model_cpu_offload() here: it pins all weights in host RAM and OOMs
+        # this 16GB box (RAM, not VRAM, is the binding constraint).
+        self.pipe.to("cuda")
         self.pipe.enable_vae_tiling()
 
         self.general_negative_prompt = (
