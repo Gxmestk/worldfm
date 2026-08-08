@@ -24,8 +24,8 @@ WorldFM learns stable cross-view spatial relationships without temporal recurren
 | Source | Type | Pose / depth GT | Role |
 |---|---|---|---|
 | Internet videos | real, open-domain | MapAnything `[17]` (estimated) | broad appearance + camera-motion coverage |
-| **DL3DV** `[22]` | real, scene-level traversal | MapAnything `[17]` | long contiguous multi-view traversals |
-| **RealEstate10K** `[51]` | real, indoor walkthrough | MapAnything `[17]` | dense indoor camera motion |
+| **DL3DV** `[22]` | real, scene-level traversal (**10,510 videos / 51.2 M frames**, 4K@60fps; COLMAP poses) | MapAnything `[17]` | long contiguous multi-view traversals |
+| **RealEstate10K** `[51]` | real, indoor walkthrough (**~10 K YouTube videos → ~80 K clips / ~10 M frames**; SLAM/BA pseudo-GT poses) | MapAnything `[17]` | dense indoor camera motion |
 | Own captured videos † | real | MapAnything `[17]` | internal coverage / style |
 | **Unreal Engine** `[12]` † | synthetic (precise GT) | **GT camera pose + depth** | corrects feedforward depth/pose errors `[§2.4.2 p7]` |
 
@@ -109,7 +109,8 @@ realization* of the offline providers referenced in §2.1 (multi-view diffusion 
 | **Step 4** condition views + transforms | `[§2.4.1 p6]` | `modules/pano_postprocess.py:285-341` (`generate_conditions`, 42 yaw/pitch views → `transforms_condition.json`) |
 
 Config anchors: MoGe checkpoint `Ruicheng/moge-2-vitl-normal` (`default.yaml:24`),
-`resolution_level=30` (`:25`), `depth_scale=100.0` default in `postprocess_panorama`
+`resolution_level=30` (`:25`) — ⚠️ **shipped repo default; our 16 GB-fit commit reduces it to `9`**
+(see [`repo-mods.md`](../repo-mods.md)); `depth_scale=100.0` default in `postprocess_panorama`
 (`pano_postprocess.py:350`); condition intrinsics `cond_fx=cond_fy=320`, `cond_size=504`
 (`pano_postprocess.py:353-355`).
 

@@ -179,6 +179,13 @@ Checkpoints: `weights/worldfm_1-step.pth`, `weights/worldfm_2-step.pth` (`worldf
 `download_ckpts.py`). The 1000-step teacher schedule is the inherited IDDPM linear schedule
 (`iddpm.py:11,18`; loaded at `worldfm_infer.py:215`).
 
+> ⚠️ **Paper↔code note (teacher sampler):** the paper calls the teacher only a *"multi-step
+> deterministic sampler"* `[§2.5 p7]` — it **does not name "DPM-Solver++"** and gives **no
+> teacher step count**. The "DPM-Solver++, order-2, ~14 steps" framing is **inferred from the
+> code** (the multi-step path's factory is `algorithm_type="dpmsolver++"`, `worldfm_infer.py:505`,
+> with an *"e.g. 14 steps"* comment at `:505`) — accurate for the code's fallback path, but **not
+> a paper claim**.
+
 ---
 
 ## Exact shipped hyperparameters — `default.yaml` (the only model config)

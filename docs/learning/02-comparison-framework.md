@@ -92,7 +92,7 @@ sharpest comparison; expand as needed. Full bibliographic identities live in
   rejected camera encodings), VGGT [34] / DUSt3R [36] / MoGe [35] / MapAnything [17] /
   MegaDepth [21] (feedforward 3D reconstruction for the point-cloud anchor),
   Stable Virtual Camera [49] / Cat3D [14] (multi-view diffusion anchor/reference
-  providers), Diffusion360 [13] / Text2360 [46] (panorama providers), DMD [42]
+  providers), Diffusion360 [13] / PanFusion [46] (panorama providers), DMD [42]
   (its 2-step distillation), VSD (its score-distillation lineage).
 - **C. Backbones / diffusion foundation models** (the substrate):
   PixArt-Σ [8] (the selected DiT backbone), DiT [24], Latent Diffusion / Stable
@@ -132,7 +132,7 @@ PDFs and re-pointing the roster.
 ## How you can drive it
 
 - **Use the proposed roster** (Groups A/B above) — fastest start; Group A is the
-  sharpest because RTFM [37] and StarGen [45] are the named head-to-head targets.
+  sharpest because RTFM [37] and StarGen [45] are the named positioning foils (related-work only — the paper runs NO head-to-head comparison against them).
 - **Point at your own papers** — put them in `paper/` (as you did for
   `2603.11911v3`) and tell me the filenames; the agents will read them directly
   instead of web-searching.

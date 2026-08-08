@@ -111,14 +111,14 @@ data:
   real: ["internet videos", "DL3DV", "RealEstate10K", "authors' own captured videos"]
   synthetic: ["Unreal Engine (precise GT camera pose + depth)"]
   pose_recovery: "MapAnything feedforward reconstruction (per-frame pose + depth); 4 frames form the global point cloud, 12 are training targets; each target's reference = temporally closest of the 4."
-  curation: "Per real clip randomly sample 16 frames -> 4 reference (build global point cloud) + 12 training targets; point-cloud render = global cloud projected to target camera; random shuffling/masking simulates real-world disorder/discontinuity. Synthetic pipeline mirrors the 4-ref/12-target split with stochastic/template trajectories + collision avoidance. Offline anchor/reference providers referenced: Stable Virtual Camera, Cat3D, VGGT, DUSt3R, MoGe, MegaDepth; panorama providers HunyuanWorld/HY-World, Diffusion360, Text2360. Dataset SIZE, total frame count, and training compute are NOT stated."
+  curation: "Per real clip randomly sample 16 frames -> 4 reference (build global point cloud) + 12 training targets; point-cloud render = global cloud projected to target camera; random shuffling/masking simulates real-world disorder/discontinuity. Synthetic pipeline mirrors the 4-ref/12-target split with stochastic/template trajectories + collision avoidance. Offline anchor/reference providers referenced: Stable Virtual Camera, Cat3D, VGGT, DUSt3R, MoGe, MegaDepth; panorama providers HunyuanWorld/HY-World, Diffusion360, PanFusion [46]. Dataset SIZE, total frame count, and training compute are NOT stated."
   caption: "None — the model is pose/image-conditioned only; there is no text-caption path at inference (cross-attention disabled, embeddings zeroed)."
 
 results_qualitative:        # QUALITATIVE ONLY — no FID/PSNR/LPIPS/multi-view-consistency metrics or benchmark tables [§3 p.12-13]
   best_at: []               # no quantitative metrics reported
   not_best_at: []
   headline: "~25 FPS @ 512x512 on H-series GPU; 10 FPS on RTX 4090. DMD 2-step outperforms 1-step; t_mid=200 (1000-step schedule) yields best balance. Each evaluation example = 1 reference + 10 frames from different viewpoints (Figs.4-8)."
-  baselines: ["RTFM (closed real-time frame model, posed-frame memory)", "StarGen (keyframe feature-warping memory)", "own Stage-II teacher vs Stage-III distilled variant"]
+  baselines: ["POSITIONING ONLY (not experimentally compared): RTFM [37] (closed real-time frame model) and StarGen [45] (keyframe feature-warping) appear only as related-work/design context (§1 p2, §2.4.1 p6), NEVER as evaluation baselines — there is no head-to-head table/metric vs any other system", "own Stage-II teacher vs Stage-III distilled variant (the only actual comparison, qualitative: Fig 4 vs Figs 5-8)"]
   internal_ablation: "Camera-pose encodings compared: Plucker-ray vs PRoPE vs pure-parametric -> PRoPE chosen (fastest convergence, most stable control)."
 
 lineage:

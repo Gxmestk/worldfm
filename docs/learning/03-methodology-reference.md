@@ -248,11 +248,18 @@ Deep dive → [`07-training-data.md`](07-training-data.md).
 - **Protocol:** each example = **1 reference image + 10 frames rendered from different
   camera viewpoints** `[§3, p12, Fig.4]`. Assesses the **fundamental (teacher) frame model**
   and the **distilled** variant across diverse scene types `[p12]`.
-- **Baselines / comparisons (named, not tabulated):** the paper positions against
-  **RTFM** `[37]` (closed real-time frame model, posed-frame memory) and **StarGen** `[45]`
-  (keyframe feature-warping) `[§2.4.1, p6]`; the **internal ablation** compares the Stage-II
-  teacher vs the Stage-III distilled variant `[§3, p12–13]`, and the three camera-pose
-  encodings (Plücker vs PRoPE vs pure-parametric) → PRoPE chosen `[§2.4.1, p5–6]`.
+- **Baselines / comparisons (none tabulated):** **RTFM** `[37]` and **StarGen** `[45]` appear
+  **only as related-work / design context** (`[§1 p2]`, `[§2.4.1 p6]`) — they are **not**
+  experimental baselines; there is **no head-to-head comparison** (no table, no metric vs any
+  other system). The **only** comparison is the authors' **own Stage-II teacher vs Stage-III
+  distilled student**, by visual inspection `[§3, p12–13]`; the **internal ablation** of the
+  three camera-pose encodings (Plücker vs PRoPE vs pure-parametric) → PRoPE chosen `[§2.4.1, p5–6]`
+  (asserted "fastest convergence / most stable," no numbers).
+- **Notable absence — no-GT consistency metrics are computable but not reported.** FID/KID
+  (distributional realism) and the multi-view-consistency metrics (**MEt3R** CVPR'25,
+  **Flow Warping Score**, **regrounding/re-projection**) require **no ground-truth target view**
+  — they are computable on the model's own outputs — yet none is reported. For a system claiming
+  to be a "world model," cross-view consistency is the defining property and is never measured.
 
 **Results numbers (everything the paper actually quantifies):**
 

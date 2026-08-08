@@ -57,7 +57,7 @@ video) — the three named memory designs WorldFM positions its **hybrid explici
 implicit-reference** scheme against. Feed-forward reconstruction for the anchor: MapAnything
 [17], VGGT [34], DUSt3R [36], MoGe [35], MegaDepth [21]. Offline multi-view/anchor providers:
 Stable Virtual Camera [49], Cat3D [14]. Panorama providers (offline 360° appearance/geometry):
-HunyuanWorld-1.0 [31], Diffusion360 [13], Text2360 [46]; image-to-3D-scene peers Layer-Pano3D
+HunyuanWorld-1.0 [31], Diffusion360 [13], PanFusion [46]; image-to-3D-scene peers Layer-Pano3D
 [39], WonderWorld [43], WonderJourney [44], LucidDreamer [9], SceneX [50].
 
 **Generation paradigm (video-based world models — the rejected side):** Voyager [16], WorldPlay
