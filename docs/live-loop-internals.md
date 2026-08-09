@@ -158,6 +158,20 @@ memory caps that make it coarse.)
 `u = fx·X/z + cx`, `v = fy·Y/z + cy`), z-buffer (nearest point per pixel wins), splat its
 color → cond1. **No new points are ever created at runtime.**
 
+The points themselves are **resident in VRAM for the whole session, as fp16**, uploaded exactly
+once at renderer construction. `TorchPointCloudRenderer.__init__` moves the numpy arrays onto the
+GPU and half-casts them — `self._xyz = torch.from_numpy(xyz).to(self.device).half()` (and the
+matching `self._rgb`), gated by `use_fp16_cache=True` (the default:
+`modules/point_renderer.py:41,54,73-78`). Their numpy source is the npz's `ply_xyz`/`ply_rgb` (§1),
+**not** the `.ply` — `ply_io.load_ply_xyz_rgb` (`modules/ply_io.py:102`) has **no online callers**
+(the renderer is fed `pp_result.ply_xyz`, itself `arrays["ply_xyz"]`, at
+`run_pipeline.py:246,422-423`). So every `render_torch` reuses the same resident tensors — **no
+per-frame host→device copy, no disk access**. The fp16 half-cast (~½ the point footprint) is what
+lets the ~8.4 M points coexist with the model weights on a 16 GB card; pass `use_fp16_cache=False`
+to keep fp32 at ~2× the VRAM cost. (The matching cond2 cache — the 42 views pre-VAE-encoded into
+`_cond2_candidates_latent` and reused per-frame by index, `worldfm_infer.py:356-381,414-417` — is
+the latent-side analogue; see §2.)
+
 ## 7. cond2 nearest-view selection — the actual algorithm
 
 `select_best_condition_index` (`modules/depth_selector.py:169-319`) picks which of the 42

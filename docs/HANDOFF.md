@@ -63,3 +63,14 @@ bash scripts/prepare.sh   # builds+caches offline anchors (panorama.png cached �
 bash scripts/runs.sh      # step=2 then step=1, --profile_worldfm, self-guarded
 bash scripts/serve.sh     # interactive live loop (WS fly-through), port 8123, self-guarded
 ```
+
+```bash
+bash scripts/serve-docs.sh   # mkdocs-material docs site, port 8126 (auto-rebuilds on docs/*.md edits)
+```
+
+> **Docs-site `uv run` gotcha (docs site ONLY):** `uv run mkdocs` / `uv run python -m mkdocs`
+> **fail** in this container — `uv run` resolves to `/opt/venv/0/bin/python3`, which has no mkdocs
+> (only the project's uv-managed `.venv` does, installed via `requirements-docs.txt`). Serve with
+> `bash scripts/serve-docs.sh`, which calls `.venv/bin/python -m mkdocs serve --dev-addr 0.0.0.0:8126`
+> directly. **Docs-site only** — `uv run python live_server.py` (`scripts/serve.sh`, port 8123)
+> works fine; do not generalize the quirk to the live server.
