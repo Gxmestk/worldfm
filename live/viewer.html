@@ -27,6 +27,13 @@
   #bar b { color: #e6e6e6; }
   a { color: #6cb6ff; }
   #warn { color: #ffb454; }
+  #controls { margin-top: 8px; display: flex; gap: 10px; align-items: center; justify-content: center; }
+  #recBtn { font: inherit; font-size: 12px; color: #e6e6e6; background: #1b2128; border: 1px solid #3a4150;
+    padding: 5px 14px; border-radius: 6px; cursor: pointer; }
+  #recBtn:hover { border-color: #6cb6ff; }
+  #recBtn.recording { color: #fff; background: #b3261e; border-color: #b3261e; }
+  #recTime { font-size: 12px; color: #b3261e; min-width: 64px; text-align: left; }
+  #recTime.idle { color: #8b94a1; }
 </style>
 </head>
 <body>
@@ -43,14 +50,19 @@
         <tr><td class="k">scroll / + −</td><td>move speed</td></tr>
         <tr><td class="k">R</td><td>reset</td></tr>
         <tr><td class="k">P</td><td>save frame (PNG)</td></tr>
+        <tr><td class="k">C</td><td>record / stop + download</td></tr>
         <tr><td class="k">H</td><td>hide / show this</td></tr>
       </table>
     </div>
   </div>
   <div id="bar">
-    <b>WASD</b> move · <b>QE</b> up/down · <b>drag</b>/<b>arrows</b> look · <b>scroll</b> speed · <b>R</b> reset · <b>P</b> save · <b>H</b> help · step-1 ≈ 3.7 FPS ·
+    <b>WASD</b> move · <b>QE</b> up/down · <b>drag</b>/<b>arrows</b> look · <b>scroll</b> speed · <b>R</b> reset · <b>P</b> save · <b>C</b> record · <b>H</b> help · step-1 ≈ 3.7 FPS ·
     <a id="frameLink" href="/frame" target="_blank">/frame</a> ·
     <a href="/metrics" target="_blank">/metrics</a>
+    <div id="controls">
+      <button id="recBtn" type="button">● Record</button>
+      <span id="recTime" class="idle">ready</span>
+    </div>
     <div id="warn"></div>
   </div>
 </div>
@@ -214,11 +226,59 @@ function saveFrame(){
   a.href=cv.toDataURL("image/png");
   document.body.appendChild(a); a.click(); a.remove();
 }
+// ---- session recording: canvas -> MediaRecorder -> download ----
+const recBtn = document.getElementById("recBtn");
+const recTimeEl = document.getElementById("recTime");
+let recorder=null, recChunks=[], recT0=0, recTimer=null;
+function pickRecMime(){
+  if (typeof MediaRecorder === "undefined") return null;
+  for (const m of ["video/webm;codecs=vp9","video/webm;codecs=vp8","video/webm","video/mp4"])
+    if (MediaRecorder.isTypeSupported(m)) return m;
+  return "";
+}
+function startRec(){
+  if (recorder) return;
+  if (!cv.captureStream || typeof MediaRecorder === "undefined") { recTimeEl.textContent = "unsupported"; return; }
+  const mime = pickRecMime();
+  try {
+    recorder = new MediaRecorder(cv.captureStream(30), mime ? {mimeType: mime, videoBitsPerSecond: 8_000_000} : {});
+  } catch (err) { recTimeEl.textContent = "recorder error"; return; }
+  recChunks = [];
+  recorder.ondataavailable = e => { if (e.data && e.data.size) recChunks.push(e.data); };
+  recorder.onstop = () => {
+    const type = mime || "video/webm";
+    const blob = new Blob(recChunks, {type});
+    const ext = type.includes("mp4") ? "mp4" : "webm";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `worldfm_recording_${Date.now()}.${ext}`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 20000);
+  };
+  recorder.start(1000);   // 1s chunks
+  recT0 = performance.now();
+  recBtn.textContent = "■ Stop"; recBtn.classList.add("recording");
+  recTimeEl.classList.remove("idle");
+  recTimer = setInterval(() => {
+    recTimeEl.textContent = `● REC ${Math.floor((performance.now()-recT0)/1000)}s`;
+  }, 250);
+}
+function stopRec(){
+  if (!recorder) return;
+  recorder.stop(); recorder = null;
+  clearInterval(recTimer);
+  recBtn.textContent = "● Record"; recBtn.classList.remove("recording");
+  recTimeEl.classList.add("idle"); recTimeEl.textContent = "saving…";
+  setTimeout(() => { if (!recorder) recTimeEl.textContent = "ready"; }, 1500);
+}
+function toggleRec(){ recorder ? stopRec() : startRec(); }
+recBtn.onclick = toggleRec;
 window.addEventListener("keydown", e=>{
   switch (e.key) {
     case "r": case "R": resetView(); break;
     case "h": case "H": case "?": toggleCheat(); break;
     case "p": case "P": e.preventDefault(); saveFrame(); break;
+    case "c": case "C": e.preventDefault(); toggleRec(); break;
     case "ArrowLeft":  e.preventDefault(); lookYaw(-0.05); markDirty(); break;
     case "ArrowRight": e.preventDefault(); lookYaw(0.05);  markDirty(); break;
     case "ArrowUp":    e.preventDefault(); lookPitch(0.05);  markDirty(); break;
