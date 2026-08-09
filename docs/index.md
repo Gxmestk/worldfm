@@ -61,6 +61,10 @@ flowchart TB
 - **Phase 1 (offline, once):** turn the one photo into a **360° panorama** (with FLUX), estimate
   **depth** (with MoGe), and from those build a **3D point cloud** + a set of **42 reference
   views**. This is heavy (minutes) but only happens once per scene, and the result is cached.
+!!! tip "Want the simplest version?"
+    [How it works (the two phases)](how-it-works.md) is a one-page, no-jargon retelling of exactly
+    this offline/online split — plus the answer to *"does the point cloud live in RAM or VRAM?"*
+
 - **Phase 2 (online, per move):** for whatever new camera angle you want, take a **fresh rendering
   of the point cloud** from that angle (= **cond1**, the geometry hint), pick the **nearest of the
   42 reference views** (= **cond2**, the appearance hint), and feed both into a **diffusion model**

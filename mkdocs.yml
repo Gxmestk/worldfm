@@ -62,6 +62,7 @@ plugins:
 
 nav:
   - WorldFM Explained: index.md
+  - How it works (the two phases): how-it-works.md
   - Run & use:
       - Run guide (batch demo): run-guide.md
       - Live loop (interactive server): live-loop.md
