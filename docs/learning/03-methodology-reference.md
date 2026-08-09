@@ -294,10 +294,16 @@ Stable Virtual Camera standard) reports four classes of metric:
   **Flow Warping Score** (RAFT warp residual), **regrounding / re-projection** (GenVS).
 - **Video:** **FVD**.
 
-> ⚠️ **The damning part:** FID/KID and the consistency metrics (MEt3R / Flow Warping Score /
-> regrounding) need **no ground-truth target view** — they are computable on the model's *own*
-> outputs — so a "world model" claiming cross-view consistency has **no excuse** for omitting
-> them. Their absence is the real evaluation gap.
+> ⚠️ **Why this is the *sharpest* critique (the asymmetry).** Fidelity metrics (PSNR/SSIM/LPIPS)
+> need a real target photo — and for a *novel* view (an angle never photographed) there is none, so
+> an author can fairly say "PSNR is uncomputable here." That excuse is legitimate, and it's why
+> generative-NVS papers often skip fidelity metrics. **MEt3R / Flow-Warping Score / regrounding need
+> no such target** — they measure the model's outputs *against each other* (cross-view agreement,
+> frame-to-frame flicker, loop-closure drift) and are free to compute on any output. So a "world
+> model" that claims cross-view consistency yet reports **none** of them has no excuse: omitting
+> them isn't "we couldn't afford the benchmark," it's "we chose not to test the very thing we
+> claim." That no-excuse asymmetry — not the loudest critique, but the hardest to defend against —
+> is what makes the no-GT omission the real evaluation gap.
 
 ### Peer methods (related-work positioning — NOT experimental baselines)
 
@@ -317,18 +323,47 @@ All except RTFM are **video-diffusion** (sequential frames, window latency, drif
 RTFM are the only **frame-based** ones; WorldFM's pitch = RTFM-style real-time, but **open-source
 + explicit 3D grounding**.
 
-## Stated limitations `[§4.1, p13]`
+## Limitations & future work `[§4.1, p13]`
+
+### Stated limitations (paper, §4.1 p13)
 
 - **Dynamic content:** both the frame model and the multi-view-consistency training data
   contain **limited dynamic content** → generating dynamic scenes with high quality/stability
-  is hard `[p13]`.
+  is hard `[p13]`. WorldFM is fundamentally a **static-scene** world model.
 - **Limited motion boundary:** historical memory relies on multi-view/panoramic observations
   whose generation models are high-compute/memory and **offline-only**, introducing a **motion
-  boundary** at the online handoff `[p13]`.
+  boundary** at the online handoff — the camera is trapped inside the region the offline
+  panorama reconstructed `[p13]`.
 - **Interactive visual stability:** removing inter-frame temporal constraints → noticeable
   **frame jitter during interaction** `[p13]`.
-- **(Doc-level caveat, not paper-stated)** evaluation is qualitative only; the released
-  checkpoints may not reflect the paper's PRoPE camera conditioning (see ⚠️ flags).
+
+### Additional limitations (verified, not paper-stated)
+
+- **Qualitative-only evaluation** — no FID/PSNR/LPIPS/consistency metrics at all; "strong
+  multi-view consistency" is asserted, not measured (see §3, and the no-GT critique above).
+- **PRoPE inactive in release** — the paper's chosen camera encoding is implemented but off on
+  the shipped inference path; unclear whether the released weights were trained with it.
+- **Inference-only release** — all training (Stages 1–3), data, and the internal panorama model
+  are withheld.
+- **Non-commercial pipeline** — Apache-2.0 code/weights, but FLUX.1-Fill-dev + HunyuanWorld-1.0
+  + ZIM make end-to-end use non-commercial (HunyuanWorld also geo-barred in EU/UK/Korea).
+- **Practical free-fly degradation** — leaving the reconstructed region → cond1 goes blank →
+  hallucinated garbage; cond2 snaps between 42 discrete views; the 16 GB-fit config (NF4 FLUX,
+  reduced MoGe depth) coarsens the point cloud vs. the paper.
+
+### Future work
+
+The paper has **no standalone "Future Work" section** — it folds directions into the
+limitations/conclusion (= "address the three stated limitations"):
+
+- **Dynamic scenes** — expand training data + frame model to handle dynamic content with
+  quality/stability (the biggest stated gap).
+- **Dissolve the motion boundary** — move panorama/multi-view generation **online** (or far
+  lighter) so the camera isn't confined to the offline-reconstructed bubble.
+- **Temporal constraints** — reintroduce inter-frame temporal modeling to kill the jitter
+  *without* sacrificing real-time speed (the core trade-off).
+- **(Broader, not paper-stated)** quantitative — especially no-GT consistency — evaluation;
+  permissive substitutes for the NC/geo-restricted components for any real deployment.
 
 ## Lineage (who begat which piece)
 

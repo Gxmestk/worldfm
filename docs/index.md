@@ -358,6 +358,32 @@ config** (NF4 FLUX + reduced MoGe depth = coarser point cloud than the paper's);
 (the fast, lower-quality decode). None is a bug; they're the consequences of the frame-based design
 + the memory budget.
 
+### Limitations (stated + observed)
+
+**The paper itself flags three (§4.1):**
+
+- **Static scenes only** — little dynamic content in the training data/model, so moving
+  objects/people/action are hard.
+- **A "motion boundary"** — you can only fly *within the region the offline panorama rebuilt*;
+  past that bubble there's no 3D info to condition on.
+- **Frame jitter** — no inter-frame temporal constraints → flicker during interaction.
+
+**Plus what I verified (not paper-stated):**
+
+- **No measured quality** — the evaluation is picture grids only; no FID/PSNR/LPIPS/consistency
+  numbers (see the box just above on why skipping the no-GT consistency metrics is the *sharpest*
+  critique).
+- **PRoPE off in the release** — the paper's camera encoding is inactive in the shipped weights.
+- **Inference-only + non-commercial** — no training code/data released; FLUX + HunyuanWorld + ZIM
+  make it non-commercial (HunyuanWorld is also geo-barred in EU/UK/Korea).
+
+### Future work
+
+The paper folds future work into its limitations (= "fix those three"): bring **dynamic scenes**,
+move panorama generation **online** to dissolve the motion boundary, and add **temporal
+constraints** to kill the jitter without losing real-time speed. Beyond the paper, the obvious
+missing piece is **real — especially no-GT consistency — evaluation**.
+
 ---
 
 ## 11. The released model checkpoints
