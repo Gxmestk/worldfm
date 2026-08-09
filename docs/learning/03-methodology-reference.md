@@ -283,6 +283,40 @@ the two concrete empirical findings. The FPS figures depend on **engineering lev
 the teacher. Multi-view consistency and post-distillation fidelity are **visual claims
 only**.
 
+### Standard NVS metrics — what a rigorous eval reports (and WorldFM omits)
+
+WorldFM reports **none** of these. A rigorous generative-NVS evaluation (the GenVS / CAT3D /
+Stable Virtual Camera standard) reports four classes of metric:
+
+- **Distributional realism (no ground truth needed):** **FID**, **KID**.
+- **Fidelity to a held-out view:** **PSNR**, **SSIM**, **LPIPS**, **DISTS** (need a real target photo).
+- **Multi-view / 3D consistency (no ground truth needed):** **MEt3R** (CVPR'25, DUSt3R+DINO),
+  **Flow Warping Score** (RAFT warp residual), **regrounding / re-projection** (GenVS).
+- **Video:** **FVD**.
+
+> ⚠️ **The damning part:** FID/KID and the consistency metrics (MEt3R / Flow Warping Score /
+> regrounding) need **no ground-truth target view** — they are computable on the model's *own*
+> outputs — so a "world model" claiming cross-view consistency has **no excuse** for omitting
+> them. Their absence is the real evaluation gap.
+
+### Peer methods (related-work positioning — NOT experimental baselines)
+
+None of these is run on a shared benchmark; the only actual comparison is own teacher vs student.
+
+| Method | Ref | Paradigm | Open? | Note |
+|---|---|---|---|---|
+| **RTFM** (World Labs) | `[37]` | real-time **frame** model (implicit KV-cache memory) | closed | the primary foil; WorldFM = open-source + explicit 3D anchors |
+| **StarGen** | `[45]` | video-diffusion + keyframe feature-warping | open (CVPR'25) | memory-design foil |
+| **GEN3C** (NVIDIA) | `[26]` | 3D-cache video generation | open (CVPR'25) | closest to WorldFM's point-cloud anchor, but video-based |
+| **Cosmos** (NVIDIA) | `[6]` | video world foundation model | open | cited as a precursor |
+| **Matrix-Game** (Skywork) | `[48]` | action-conditioned video | open | video-based peer |
+| **Long-term spatial memory** | `[38]` | video w/ spatial-memory module | closed | the "long-term spatial consistency" foil |
+| **Worldplay** | `[29]` | real-time interactive video | — | a real-time competitor |
+
+All except RTFM are **video-diffusion** (sequential frames, window latency, drift). WorldFM and
+RTFM are the only **frame-based** ones; WorldFM's pitch = RTFM-style real-time, but **open-source
++ explicit 3D grounding**.
+
 ## Stated limitations `[§4.1, p13]`
 
 - **Dynamic content:** both the frame model and the multi-view-consistency training data

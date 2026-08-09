@@ -253,3 +253,32 @@ condition/cond2 VAE-latent caching, KV-cache management:
 > [`04-paper-code-crosswalk.md`](04-paper-code-crosswalk.md); data detail lives in
 > [`07-training-data.md`](07-training-data.md); the distilled decode loop in
 > [`08-runtime-and-decode.md`](08-runtime-and-decode.md).
+
+---
+
+## Released checkpoints — licensing & load mechanics
+
+**Files in `weights/` (published at `inspatio/worldfm` on Hugging Face):**
+
+| File | Size | What |
+|---|---|---|
+| `worldfm_2-step.pth` | ~2.46 GB (2,458,577,701 B) | 2-step DMD student (the default) |
+| `worldfm_1-step.pth` | ~2.46 GB (2,458,577,701 B) | 1-step DMD student (fast) |
+| `vae/diffusion_pytorch_model.safetensors` | ~320 MB | `AutoencoderKL` VAE |
+
+- Both `.pth` files share an **identical byte count but different MD5s** — genuinely distinct
+  weights; both instantiate the **same `PixArtWorldFMMS_XL_2`** architecture (selection keys off
+  `version`+`image_size`, never `step`). Parameter count is **unstated** (~0.6 B estimated from
+  the 2.46 GB fp32 file).
+- **Load mechanics** (`modules/worldfm_infer.py:149-176`): `find_model` → `torch.load(map_location=CPU)`
+  (fp32-on-CPU transient ~2.46 GB); **`del state_dict["pos_embed"]` + `load_state_dict(strict=False)`**
+  because the runtime re-derives positional embeddings for the actual latent grid via
+  `warm_pos_embed_cache(width_multiplier=3)` (the 3× for tri-condition); then `.eval().to(fp16)`.
+  The compiled entry point is `forward_with_dpmsolver`, whose output is `chunk(2, dim=1)[0]`
+  (keeps the 4-channel ε, drops the variance half from `pred_sigma`).
+- **Licensing:** the WorldFM library + the two students + VAE are **Apache-2.0** — but a full
+  pipeline is **non-commercial**: FLUX.1-Fill-dev / NF4 (FLUX Dev Non-Commercial), HunyuanWorld-1.0
+  (Tencent, non-commercial + geo-restricted EU/UK/Korea), ZIM (CC BY-NC). MoGe (MIT) and
+  Real-ESRGAN (BSD-3) are permissive.
+- **Withheld:** the teacher (Stage-II fundamental model), the DMD fake-score/critic, all
+  Stage-I/II training weights, optimizer states, and all training code/data.
