@@ -1,0 +1,81 @@
+site_name: WorldFM Docs
+site_description: >-
+  InSpatio-WorldFM (arXiv 2603.11911) — real-time novel-view synthesis from a single image.
+  A beginner-friendly explainer plus reference depth, served from the repo.
+repo_url: https://github.com/Gxmestk/worldfm
+repo_name: Gxmestk/worldfm
+docs_dir: docs
+use_directory_urls: true
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - toc.follow
+  palette:
+    - scheme: default
+      primary: deep orange
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark
+    - scheme: slate
+      primary: deep orange
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.emoji
+  - pymdownx.snippets
+  - attr_list
+  - md_in_html
+  - footnotes
+  - tables
+  - def_list
+  - toc:
+      permalink: true
+      toc_depth: 3
+
+plugins:
+  - search
+  - tags
+
+nav:
+  - WorldFM Explained: index.md
+  - Run & use:
+      - Run guide (batch demo): run-guide.md
+      - Live loop (interactive server): live-loop.md
+      - Live-loop internals: live-loop-internals.md
+      - 16 GB modifications: repo-mods.md
+      - Handoff / status: HANDOFF.md
+  - Deep dives (paper + code):
+      - "01 — Big picture": learning/01-big-picture.md
+      - "02 — Comparison framework": learning/02-comparison-framework.md
+      - "03 — Methodology reference": learning/03-methodology-reference.md
+      - "04 — Paper↔code crosswalk": learning/04-paper-code-crosswalk.md
+      - "05 — Formulation": learning/05-formulation.md
+      - "06 — Training & distillation": learning/06-training-distillation.md
+      - "07 — Training data": learning/07-training-data.md
+      - "08 — Runtime & decode": learning/08-runtime-and-decode.md
+      - "09 — Diagrams": learning/09-diagrams.md
+      - "10 — Glossary & lineage": learning/10-glossary-lineage.md
